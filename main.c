@@ -30,6 +30,13 @@ SOFTWARE.
 /* Includes */
 #include "stm32f0xx.h"
 
+void USART1_IRQHandler() {
+	if ((USART1->ISR & USART_ISR_TXE) == USART_ISR_TXE) {
+		static uint8_t byte = 0;
+		USART1->TDR = byte++;
+	}
+}
+
 /*
  * 	PA9 - usart 1 TX
  * 	PA10 - usart 1 RX
@@ -44,6 +51,7 @@ void init_gpio_as_AF_for_usart() {
 	//3 - turn on peripheral...
 }
 
+
 void init_usart1() {
 
 	//0 (3)
@@ -56,10 +64,18 @@ void init_usart1() {
 	USART1->CR1 |= USART_CR1_TE;	//transmit enable
 	USART1->CR2 &= ~USART_CR2_STOP;	//1 stop bit
 
+//init interruption
+#ifndef NO_USART_INTERRUPT
+	USART1->CR1 |= USART_CR1_TXEIE;
+#endif
 	USART1->BRR = SystemCoreClock / 115200;
-
 	//4
 	USART1->CR1 |= USART_CR1_UE;
+
+#ifndef NO_USART_INTERRUPT
+	NVIC_SetPriority(USART1_IRQn, 2);
+	NVIC_EnableIRQ(USART1_IRQn);
+#endif
 }
 
 uint8_t put_char_usart1(uint8_t byte) {
@@ -75,14 +91,17 @@ uint8_t put_char_usart1(uint8_t byte) {
 int main(void)
 {
 	init_usart1();
-
+#ifdef NO_USART_INTERRUPT
 	uint8_t byte = 0;
+#endif
 
 	while (1)
 	{
+#ifdef NO_USART_INTERRUPT
 		if (put_char_usart1(byte) == 1) {
 			byte++;
 		}
+#endif
 
 	}
 }
