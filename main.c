@@ -57,7 +57,7 @@ void blinkLed9() {
 void init_tim6() {
 	RCC->APB1ENR |= RCC_APB1ENR_TIM6EN;
 
-	TIM6->ARR = 8000 - 1;
+	TIM6->ARR = 1000 - 1;
 	TIM6->PSC = 500 - 1;
 
 	TIM6->DIER |= TIM_DIER_UIE;
@@ -74,6 +74,6 @@ int main(void)
 	init_tim6();
 	while (1)
 	{
-		blinkLed9();
+
 	}
 }
