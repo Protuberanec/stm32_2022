@@ -30,50 +30,59 @@ SOFTWARE.
 /* Includes */
 #include "stm32f0xx.h"
 
-void TIM6_DAC_IRQHandler(void) {
-	TIM6->SR &= ~TIM_SR_UIF;
+/*
+ * 	PA9 - usart 1 TX
+ * 	PA10 - usart 1 RX
+ */
+void init_gpio_as_AF_for_usart() {
+	//1
+	RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
+	//2
+	GPIOA->MODER |= GPIO_MODER_MODER9_1 | GPIO_MODER_MODER10_1;
+	GPIOA->AFR[1] |=  (1 << 4)|(1 << 8);	//AF1
 
-	blinkLed8();
+	//3 - turn on peripheral...
 }
 
-void init_gpio() {
-	RCC->AHBENR |= RCC_AHBENR_GPIOCEN;	//turn on clock pulse
-	GPIOC->MODER |= GPIO_MODER_MODER8_0 | GPIO_MODER_MODER9_0;	//init gpio
+void init_usart1() {
+
+	//0 (3)
+	init_gpio_as_AF_for_usart();
+	//1
+	RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
+	//2
+
+	USART1->CR1 |= USART_CR1_RE;	//enable receive
+	USART1->CR1 |= USART_CR1_TE;	//transmit enable
+	USART1->CR2 &= ~USART_CR2_STOP;	//1 stop bit
+
+	USART1->BRR = SystemCoreClock / 115200;
+
+	//4
+	USART1->CR1 |= USART_CR1_UE;
 }
 
-void blinkLed8() {
-	GPIOC->ODR ^= GPIO_ODR_8;
-}
-
-void blinkLed9() {
-	if (TIM6->CNT > 4000) {
-		GPIOC->BSRR = GPIO_BSRR_BR_9;
-		return;
+uint8_t put_char_usart1(uint8_t byte) {
+	if ((USART1->ISR & USART_ISR_TXE) == USART_ISR_TXE)
+	{
+		USART1->TDR = byte;
+		return 1;
 	}
-
-	GPIOC->BSRR = GPIO_BSRR_BS_9;
+	return 0;
 }
 
-void init_tim6() {
-	RCC->APB1ENR |= RCC_APB1ENR_TIM6EN;
-
-	TIM6->ARR = 1000 - 1;
-	TIM6->PSC = 500 - 1;
-
-	TIM6->DIER |= TIM_DIER_UIE;
-
-	NVIC_SetPriority(TIM6_DAC_IRQn, 8);
-	NVIC_EnableIRQ(TIM6_DAC_IRQn);
-
-	TIM6->CR1 |= TIM_CR1_CEN;
-}
 
 int main(void)
 {
-	init_gpio();
-	init_tim6();
+	init_usart1();
+
+	uint8_t byte = 0;
+
 	while (1)
 	{
+		if (put_char_usart1(byte) == 1) {
+			byte++;
+		}
 
 	}
 }
