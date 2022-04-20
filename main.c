@@ -30,10 +30,22 @@ SOFTWARE.
 /* Includes */
 #include "stm32f0xx.h"
 
+#define USART_DMA
+//#define SIMPLE_USART
+
 void USART1_IRQHandler() {
 	if ((USART1->ISR & USART_ISR_TXE) == USART_ISR_TXE) {
 		static uint8_t byte = 0;
 		USART1->TDR = byte++;
+	}
+}
+
+void DMA1_Channel2_3_IRQHandler(void) {
+	//0. какой канал контроллера DMA
+	//1. какое прерывание half, full, error
+	if ( (DMA1->ISR & DMA_ISR_TCIF2) == DMA_ISR_TCIF2)  {
+		DMA1->IFCR |= DMA_IFCR_CTCIF2;
+		//перенастроить DMA контроллер....  или что-то сделать...
 	}
 }
 
@@ -87,10 +99,55 @@ uint8_t put_char_usart1(uint8_t byte) {
 	return 0;
 }
 
+uint8_t data[256];
+
+void init_usart_dma() {
+
+	for (int i = 0; i < 256; i++) {
+		data[i] = i;
+	}
+
+//0 (3)
+	init_gpio_as_AF_for_usart();
+	//1
+	RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
+	//2
+
+	USART1->CR1 |= USART_CR1_RE;	//enable receive
+	USART1->CR1 |= USART_CR1_TE;	//transmit enable
+	USART1->CR2 &= ~USART_CR2_STOP;	//1 stop bit
+
+	USART1->BRR = SystemCoreClock / 115200;
+	USART1->CR3 |= USART_CR3_DMAT;	//allow usart to work via DMA
+
+
+	RCC->AHBENR |= RCC_AHBENR_DMA1EN;
+	DMA1_Channel2->CPAR = (uint32_t)(&(USART1->TDR));
+	DMA1_Channel2->CMAR = (uint32_t)(&data[0]);
+	DMA1_Channel2->CNDTR = 256;
+	DMA1_Channel2->CCR |= DMA_CCR_TCIE;	//interruption
+	DMA1_Channel2->CCR |= DMA_CCR_DIR;	//read from memory
+	DMA1_Channel2->CCR |= DMA_CCR_MINC;
+//	DMA1_Channel2->CCR |= DMA_CCR_PSIZE | DMA_CCR_MSIZE;	size of data
+
+	NVIC_SetPriority(DMA1_Channel2_3_IRQn, 9);
+	NVIC_EnableIRQ(DMA1_Channel2_3_IRQn);
+
+
+	DMA1_Channel2->CCR |= DMA_CCR_EN;
+	//4
+	USART1->CR1 |= USART_CR1_UE;
+}
+
 
 int main(void)
 {
+#ifdef SIMPLE_USART
 	init_usart1();
+#endif
+#ifdef USART_DMA
+	init_usart_dma();
+#endif
 #ifdef NO_USART_INTERRUPT
 	uint8_t byte = 0;
 #endif
