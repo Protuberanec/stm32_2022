@@ -30,13 +30,39 @@ SOFTWARE.
 /* Includes */
 #include "stm32f0xx.h"
 
-#define USART_DMA
+
+//#define USART_DMA
 //#define SIMPLE_USART
+#define ADC_LESSON
+
+uint8_t byteRx;
+
+void adc_init_cont();
+void bufferPutToEnd() {
+
+}
+
+/*
+ * input		:
+ * 	output		:
+ * 	description	:
+ * 	author		:
+ * 	version		:
+ * 	date		:
+ */
+int bufferIsEmpty() {}
+
+uint8_t bufferGetDataFromBegin() {}
 
 void USART1_IRQHandler() {
 	if ((USART1->ISR & USART_ISR_TXE) == USART_ISR_TXE) {
 		static uint8_t byte = 0;
 		USART1->TDR = byte++;
+	}
+
+	if ((USART1->ISR & USART_ISR_RXNE) == USART_ISR_RXNE) {
+		byteRx = USART1->RDR;
+		bufferPutToEnd();
 	}
 }
 
@@ -63,6 +89,7 @@ void init_gpio_as_AF_for_usart() {
 	//3 - turn on peripheral...
 }
 
+uint16_t data_adc[2];
 
 void init_usart1() {
 
@@ -78,7 +105,8 @@ void init_usart1() {
 
 //init interruption
 #ifndef NO_USART_INTERRUPT
-	USART1->CR1 |= USART_CR1_TXEIE;
+//	USART1->CR1 |= USART_CR1_TXEIE;
+	USART1->CR1 |= USART_CR1_RXNEIE;
 #endif
 	USART1->BRR = SystemCoreClock / 115200;
 	//4
@@ -90,6 +118,16 @@ void init_usart1() {
 #endif
 }
 
+void ADC1_COMP_IRQHandler(void) {
+	if ((ADC1->ISR & ADC_ISR_EOSEQ) == ADC_ISR_EOSEQ) {
+		ADC1->ISR |= ADC_ISR_EOSEQ;
+	}
+
+	if ((ADC1->ISR & ADC_ISR_EOC) == ADC_ISR_EOC) {
+		data_adc[0] = ADC1->DR;
+	}
+}
+
 uint8_t put_char_usart1(uint8_t byte) {
 	if ((USART1->ISR & USART_ISR_TXE) == USART_ISR_TXE)
 	{
@@ -99,7 +137,7 @@ uint8_t put_char_usart1(uint8_t byte) {
 	return 0;
 }
 
-uint8_t data[256];
+uint32_t data[256];
 
 void init_usart_dma() {
 
@@ -139,9 +177,35 @@ void init_usart_dma() {
 	USART1->CR1 |= USART_CR1_UE;
 }
 
+void processBuffer() {
+	if (bufferIsEmpty()) {
+		return;
+	}
+
+	uint8_t tempByte = bufferGetDataFromBegin();
+
+
+}
+
+void workUsart() {
+#ifdef NO_USART_INTERRUPT
+		if (put_char_usart1(byte) == 1) {
+			byte++;
+		}
+#endif
+		if (byteRx == 0xA1) {
+			GPIOC->ODR ^= GPIO_ODR_8;
+			byteRx = 0x00;
+		}
+}
+
+void blinkLed() {}
+
 
 int main(void)
 {
+	RCC->AHBENR |= RCC_AHBENR_GPIOCEN;
+	GPIOC->MODER |= GPIO_MODER_MODER8_0;	//LED output
 #ifdef SIMPLE_USART
 	init_usart1();
 #endif
@@ -152,13 +216,49 @@ int main(void)
 	uint8_t byte = 0;
 #endif
 
+#ifdef ADC_LESSON
+	adc_init_cont();
+	adc_start();
+#endif
+
 	while (1)
 	{
-#ifdef NO_USART_INTERRUPT
-		if (put_char_usart1(byte) == 1) {
-			byte++;
-		}
+#ifdef SIMPLE_USART
+		workUsart();
+		processBuffer();
+		blinkLed();
+#endif
+#ifdef ADC_LESSON
+
 #endif
 
 	}
+}
+
+
+void adc_init_cont() {
+	RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
+	RCC->CR2 |= RCC_CR2_HSI14ON;
+
+	ADC1->CHSELR = ADC_CHSELR_CHSEL0;// | ADC_CHSELR_CHSEL1;	//adc_in0 - pa0, adc_in1 - pa1
+	RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
+	GPIOA->MODER |= GPIO_MODER_MODER0 /*GPIO_MODER_MODER0_0 | GPIO_MODER_MODER0_1*/ |
+					GPIO_MODER_MODER1;	//analog function for pa0, pa1
+
+	ADC1->IER |= ADC_IER_EOCIE;
+	ADC1->IER |= ADC_IER_EOSEQIE;
+	NVIC_SetPriority(ADC1_COMP_IRQn, 5);
+	NVIC_EnableIRQ(ADC1_COMP_IRQn);
+
+	ADC1->CFGR1 |= ADC_CFGR1_CONT;
+
+	ADC1->CR |= ADC_CR_ADEN;
+}
+
+void adc_start() {
+	ADC1->CR |= ADC_CR_ADSTART;
+}
+
+void adc_stop() {
+	ADC1->CR |= ADC_CR_ADSTP;
 }
