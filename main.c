@@ -33,13 +33,55 @@ SOFTWARE.
 
 //#define USART_DMA
 //#define SIMPLE_USART
-#define ADC_LESSON
+//#define ADC_LESSON
+#define ADC_DMA_LESSON
+
+#define SIZE_ADC 1024
+uint16_t adc_data[SIZE_ADC];
+
+float aver_left, aver_right, aver_all;
+
+void DMA1_Channel1_IRQHandler() {
+	if ((DMA1->ISR & DMA_ISR_HTIF1) == DMA_ISR_HTIF1) {
+		GPIOC->BSRR = GPIO_BSRR_BS_8;
+		DMA1->IFCR |= DMA_IFCR_CHTIF1;
+		///@todo
+
+		//here result of aver_left
+	}
+
+	if ((DMA1->ISR & DMA_ISR_TCIF1) == DMA_ISR_TCIF1) {
+//		GPIOC->BSRR = GPIO_BSRR_BS_8;
+		DMA1->IFCR |= DMA_IFCR_CTCIF1;
+		///@todo
+		//here result of aver_right
+
+//		aver_all = (aver_left + aver_right)/ 2;
+		GPIOC->BSRR = GPIO_BSRR_BR_8;
+	}
+
+
+}
 
 uint8_t byteRx;
 
 void adc_init_cont();
 void bufferPutToEnd() {
 
+}
+
+void Init_clock() {
+	RCC->CR &= ~RCC_CR_PLLON;
+	while(RCC->CR & RCC_CR_PLLRDY);
+
+	RCC->CFGR |= RCC_CFGR_PLLMUL12;
+
+	RCC->CR |= RCC_CR_PLLON;
+	while(RCC->CR & RCC_CR_PLLRDY);
+
+	RCC->CFGR |= RCC_CFGR_SW_1;
+
+	for (int i = 0; i < 1000; i++);
 }
 
 /*
@@ -204,6 +246,10 @@ void blinkLed() {}
 
 int main(void)
 {
+//	Init_clock();	//48Mhz
+//	SystemCoreClockUpdate();
+
+
 	RCC->AHBENR |= RCC_AHBENR_GPIOCEN;
 	GPIOC->MODER |= GPIO_MODER_MODER8_0;	//LED output
 #ifdef SIMPLE_USART
@@ -217,6 +263,10 @@ int main(void)
 #endif
 
 #ifdef ADC_LESSON
+	adc_init_cont();
+	adc_start();
+#endif
+#ifdef ADC_DMA_LESSON
 	adc_init_cont();
 	adc_start();
 #endif
@@ -234,8 +284,7 @@ int main(void)
 
 	}
 }
-
-
+// реализовать запуск АЦП по сигналу TRGO
 void adc_init_cont() {
 	RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
 	RCC->CR2 |= RCC_CR2_HSI14ON;
@@ -245,12 +294,40 @@ void adc_init_cont() {
 	GPIOA->MODER |= GPIO_MODER_MODER0 /*GPIO_MODER_MODER0_0 | GPIO_MODER_MODER0_1*/ |
 					GPIO_MODER_MODER1;	//analog function for pa0, pa1
 
+
+#ifndef ADC_DMA_LESSON
 	ADC1->IER |= ADC_IER_EOCIE;
 	ADC1->IER |= ADC_IER_EOSEQIE;
+#endif
 	NVIC_SetPriority(ADC1_COMP_IRQn, 5);
 	NVIC_EnableIRQ(ADC1_COMP_IRQn);
 
 	ADC1->CFGR1 |= ADC_CFGR1_CONT;
+	ADC1->SMPR |= ADC_SMPR1_SMPR;
+
+#ifdef ADC_DMA_LESSON
+	ADC1->CFGR1 |= ADC_CFGR1_DMACFG;	//circular mode
+	ADC1->CFGR1 |= ADC_CFGR1_DMAEN;		//enable dma...
+
+	ADC1->CFGR1 |= ADC_CFGR1_OVRMOD;	//disable overrun
+
+	RCC->AHBENR |= RCC_AHBENR_DMAEN;
+	DMA1_Channel1->CCR |= DMA_CCR_HTIE | DMA_CCR_TCIE;
+	DMA1_Channel1->CCR |= DMA_CCR_MSIZE_0;	//16 bit
+	DMA1_Channel1->CCR |= DMA_CCR_PSIZE_0;
+	DMA1_Channel1->CCR |= DMA_CCR_MINC;
+	DMA1_Channel1->CCR &= ~DMA_CCR_DIR;	//per -> mem
+	DMA1_Channel1->CCR |= DMA_CCR_CIRC;
+
+	DMA1_Channel1->CMAR = (uint32_t)(&adc_data[0]);
+	DMA1_Channel1->CPAR = (uint32_t)(&(ADC1->DR));
+	DMA1_Channel1->CNDTR = SIZE_ADC;
+
+	NVIC_SetPriority(DMA1_Ch1_IRQn, 10);
+	NVIC_EnableIRQ(DMA1_Ch1_IRQn);
+
+	DMA1_Channel1->CCR |= DMA_CCR_EN;
+#endif
 
 	ADC1->CR |= ADC_CR_ADEN;
 }
